@@ -113,7 +113,7 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
         final String token = tokenProvider.generateToken(authResult);
 
         // Create authentication response
-        final UserResponse userResponse = user != null ? userMapper.toUserResponse(user)
+        final UserResponse userResponse = user != null ? userMapper.toDto(user)
                 : UserResponse
                     .builder()
                     .email(userDetails.getUsername())
