@@ -1,4 +1,4 @@
-package com.kardio.dto.user;
+package com.kardio.dto.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -9,13 +9,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for creating a new user
+ * DTO for user registration
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserCreateRequest {
+public class RegisterRequest {
+
 	@NotBlank(message = "Email is required")
 	@Email(message = "Invalid email format")
 	private String email;
@@ -24,5 +25,9 @@ public class UserCreateRequest {
 	@Size(min = 8, message = "Password must be at least 8 characters long")
 	private String password;
 
-	private String displayName;
+	@NotBlank(message = "First name is required")
+	private String firstName;
+
+	@NotBlank(message = "Last name is required")
+	private String lastName;
 }

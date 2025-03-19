@@ -10,10 +10,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.kardio.dto.AuthRequest;
-import com.kardio.dto.AuthResponse;
-import com.kardio.dto.RegisterRequest;
-import com.kardio.dto.UserResponse;
+import com.kardio.dto.auth.AuthRequest;
+import com.kardio.dto.auth.AuthResponse;
+import com.kardio.dto.auth.RegisterRequest;
+import com.kardio.dto.user.UserResponse;
 import com.kardio.entity.Role;
 import com.kardio.entity.User;
 import com.kardio.exception.KardioException;

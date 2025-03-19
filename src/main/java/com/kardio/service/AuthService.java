@@ -1,9 +1,9 @@
 package com.kardio.service;
 
-import com.kardio.dto.AuthRequest;
-import com.kardio.dto.AuthResponse;
-import com.kardio.dto.RegisterRequest;
-import com.kardio.dto.UserResponse;
+import com.kardio.dto.auth.AuthRequest;
+import com.kardio.dto.auth.AuthResponse;
+import com.kardio.dto.auth.RegisterRequest;
+import com.kardio.dto.user.UserResponse;
 
 /**
  * Service interface for authentication-related operations.

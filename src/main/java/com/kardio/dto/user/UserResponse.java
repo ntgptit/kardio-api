@@ -1,6 +1,7 @@
 package com.kardio.dto.user;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import lombok.AllArgsConstructor;
@@ -18,6 +19,9 @@ import lombok.NoArgsConstructor;
 public class UserResponse {
 	private UUID id;
 	private String email;
+	private String firstName;
+	private String lastName;
 	private String displayName;
 	private LocalDateTime createdAt;
+	private List<String> roles;
 }
