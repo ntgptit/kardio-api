@@ -5,14 +5,18 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import com.kardio.dto.common.PageResponse;
 import com.kardio.dto.common.SuccessResponse;
@@ -23,12 +27,9 @@ import com.kardio.dto.module.StudyModuleShareRequest;
 import com.kardio.dto.module.StudyModuleSummaryResponse;
 import com.kardio.dto.module.StudyModuleUpdateRequest;
 import com.kardio.entity.Folder;
-import com.kardio.entity.LearningProgress;
 import com.kardio.entity.SharedStudyModule;
 import com.kardio.entity.StudyModule;
 import com.kardio.entity.User;
-import com.kardio.entity.Vocabulary;
-import com.kardio.entity.enums.LearningStatus;
 import com.kardio.entity.enums.VisibilityType;
 import com.kardio.exception.KardioException;
 import com.kardio.mapper.StudyModuleMapper;
@@ -43,9 +44,6 @@ import com.kardio.service.StudyModuleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Implementation of StudyModuleService for module management.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -57,7 +55,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
     private final VocabularyRepository vocabularyRepository;
     private final LearningProgressRepository learningProgressRepository;
     private final SharedStudyModuleRepository sharedStudyModuleRepository;
-
+    private final MessageSource messageSource;
     private final StudyModuleMapper studyModuleMapper;
 
     @Override
@@ -68,7 +66,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Validate and get creator
         User creator = userRepository.findById(creatorId).orElseThrow(() -> {
             log.error("User not found with ID: {}", creatorId);
-            return KardioException.resourceNotFound("User", creatorId);
+            return KardioException.resourceNotFound(messageSource, "entity.user", creatorId);
         });
 
         // Get folder if provided
@@ -76,13 +74,17 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         if (request.getFolderId() != null) {
             folder = folderRepository.findById(request.getFolderId()).orElseThrow(() -> {
                 log.error("Folder not found with ID: {}", request.getFolderId());
-                return KardioException.resourceNotFound("Folder", request.getFolderId());
+                return KardioException.resourceNotFound(messageSource, "entity.folder", request.getFolderId());
             });
 
             // Check folder ownership
             if (!folder.getUser().getId().equals(creatorId)) {
                 log.error("User {} does not own folder {}", creatorId, request.getFolderId());
-                throw KardioException.forbidden("You do not have permission to use this folder");
+                throw KardioException
+                    .forbidden(
+                        messageSource,
+                        "error.forbidden.resource",
+                        messageSource.getMessage("entity.folder", null, LocaleContextHolder.getLocale()));
             }
         }
 
@@ -96,6 +98,9 @@ public class StudyModuleServiceImpl implements StudyModuleService {
 
     @Override
     @Transactional(readOnly = true)
+    @Retryable(value = {
+            Exception.class
+    }, maxAttempts = 3, backoff = @Backoff(delay = 1000))
     public StudyModuleResponse getModuleById(UUID id, UUID userId) {
         log.debug("Getting study module by ID: {} for user ID: {}", id, userId);
 
@@ -104,7 +109,11 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check access
         if (!canAccessModule(module, userId)) {
             log.error("User {} does not have access to module {}", userId, id);
-            throw KardioException.forbidden("You do not have permission to access this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.resource",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
         return studyModuleMapper.toDto(module);
@@ -120,46 +129,22 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check access
         if (!canAccessModule(module, userId)) {
             log.error("User {} does not have access to module {}", userId, id);
-            throw KardioException.forbidden("You do not have permission to access this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.resource",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
-        // Get vocabulary count
-        int vocabularyCount = (int) vocabularyRepository.countByModuleId(id);
+        // Get vocabulary count and statistics
+        ModuleStatistics statistics = calculateModuleStatistics(id, userId);
 
-        // Calculate statistics if user is provided
-        double averageAccuracy = 0.0;
-        double completionPercentage = 0.0;
-
-        if (userId != null && vocabularyCount > 0) {
-            // Count mastered vocabularies
-            long masteredCount = learningProgressRepository
-                .countByUserIdAndVocabulary_Module_IdAndStatus(userId, id, LearningStatus.MASTERED);
-
-            // Count learning vocabularies
-            long learningCount = learningProgressRepository
-                .countByUserIdAndVocabulary_Module_IdAndStatus(userId, id, LearningStatus.LEARNING);
-
-            // Calculate completion percentage
-            completionPercentage = (double) masteredCount / vocabularyCount * 100;
-
-            // Get all progress for this module's vocabularies
-            List<Vocabulary> vocabularies = vocabularyRepository.findByModuleId(id, Pageable.unpaged()).getContent();
-            List<UUID> vocabularyIds = vocabularies.stream().map(Vocabulary::getId).collect(Collectors.toList());
-
-            List<LearningProgress> progressList = learningProgressRepository
-                .findByUserIdAndVocabularyIdIn(userId, vocabularyIds);
-
-            // Calculate average accuracy
-            if (!progressList.isEmpty()) {
-                averageAccuracy = progressList
-                    .stream()
-                    .mapToDouble(LearningProgress::getAccuracyRate)
-                    .average()
-                    .orElse(0.0);
-            }
-        }
-
-        return studyModuleMapper.toDetailedResponse(module, vocabularyCount, averageAccuracy, completionPercentage);
+        return studyModuleMapper
+            .toDetailedResponse(
+                module,
+                statistics.getVocabularyCount(),
+                statistics.getAverageAccuracy(),
+                statistics.getCompletionPercentage());
     }
 
     @Override
@@ -172,23 +157,16 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check ownership
         if (!module.getCreator().getId().equals(userId)) {
             log.error("User {} is not the owner of module {}", userId, id);
-            throw KardioException.forbidden("You must be the owner to update this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.owner",
+                    "update",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
         // Get folder if provided
-        Folder folder = null;
-        if (request.getFolderId() != null) {
-            folder = folderRepository.findById(request.getFolderId()).orElseThrow(() -> {
-                log.error("Folder not found with ID: {}", request.getFolderId());
-                return KardioException.resourceNotFound("Folder", request.getFolderId());
-            });
-
-            // Check folder ownership
-            if (!folder.getUser().getId().equals(userId)) {
-                log.error("User {} does not own folder {}", userId, request.getFolderId());
-                throw KardioException.forbidden("You do not have permission to use this folder");
-            }
-        }
+        Folder folder = getAndValidateFolderForUser(request.getFolderId(), userId);
 
         // Update module
         StudyModule updatedModule = studyModuleMapper.updateFromRequest(request, module, folder);
@@ -196,6 +174,29 @@ public class StudyModuleServiceImpl implements StudyModuleService {
 
         log.info("Study module updated successfully: {}", savedModule.getId());
         return studyModuleMapper.toDto(savedModule);
+    }
+
+    private Folder getAndValidateFolderForUser(UUID folderId, UUID userId) {
+        if (folderId == null) {
+            return null;
+        }
+
+        Folder folder = folderRepository.findById(folderId).orElseThrow(() -> {
+            log.error("Folder not found with ID: {}", folderId);
+            return KardioException.resourceNotFound(messageSource, "entity.folder", folderId);
+        });
+
+        // Check folder ownership
+        if (!folder.getUser().getId().equals(userId)) {
+            log.error("User {} does not own folder {}", userId, folderId);
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.resource",
+                    messageSource.getMessage("entity.folder", null, LocaleContextHolder.getLocale()));
+        }
+
+        return folder;
     }
 
     @Override
@@ -208,7 +209,12 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check ownership
         if (!module.getCreator().getId().equals(userId)) {
             log.error("User {} is not the owner of module {}", userId, id);
-            throw KardioException.forbidden("You must be the owner to delete this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.owner",
+                    "delete",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
         // Soft delete
@@ -216,7 +222,9 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         studyModuleRepository.save(module);
 
         log.info("Study module deleted successfully: {}", id);
-        return SuccessResponse.of("Study module deleted successfully");
+        return SuccessResponse.of(messageSource.getMessage("success.deleted", new Object[]{
+                messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale())
+        }, LocaleContextHolder.getLocale()));
     }
 
     @Override
@@ -227,7 +235,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Validate user exists
         if (!userRepository.existsById(userId)) {
             log.error("User not found with ID: {}", userId);
-            throw KardioException.resourceNotFound("User", userId);
+            throw KardioException.resourceNotFound(messageSource, "entity.user", userId);
         }
 
         Page<StudyModule> modulePage = studyModuleRepository.findByCreatorId(userId, pageable);
@@ -243,13 +251,17 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Validate folder exists and user can access it
         Folder folder = folderRepository.findById(folderId).orElseThrow(() -> {
             log.error("Folder not found with ID: {}", folderId);
-            return KardioException.resourceNotFound("Folder", folderId);
+            return KardioException.resourceNotFound(messageSource, "entity.folder", folderId);
         });
 
         // Check folder ownership
         if (!folder.getUser().getId().equals(userId)) {
             log.error("User {} does not own folder {}", userId, folderId);
-            throw KardioException.forbidden("You do not have permission to access this folder");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.resource",
+                    messageSource.getMessage("entity.folder", null, LocaleContextHolder.getLocale()));
         }
 
         Page<StudyModule> modulePage = studyModuleRepository.findByFolderId(folderId, pageable);
@@ -259,6 +271,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "publicModules", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
     public PageResponse<StudyModuleSummaryResponse> getPublicModules(Pageable pageable) {
         log.debug("Getting public modules");
 
@@ -275,7 +288,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Validate user exists
         if (!userRepository.existsById(userId)) {
             log.error("User not found with ID: {}", userId);
-            throw KardioException.resourceNotFound("User", userId);
+            throw KardioException.resourceNotFound(messageSource, "entity.user", userId);
         }
 
         Page<StudyModule> modulePage = studyModuleRepository.findSharedWithUser(userId, pageable);
@@ -285,44 +298,42 @@ public class StudyModuleServiceImpl implements StudyModuleService {
 
     @Override
     @Transactional(readOnly = true)
-    public
-            PageResponse<StudyModuleSummaryResponse>
-            searchModules(String term, boolean publicOnly, UUID userId, Pageable pageable) {
+    public PageResponse<StudyModuleSummaryResponse> searchModules(
+            String term,
+            boolean publicOnly,
+            UUID userId,
+            Pageable pageable) {
         log.debug("Searching modules with term: {}, publicOnly: {}, userId: {}", term, publicOnly, userId);
 
-        if (!StringUtils.hasText(term) || term.length() < 2) {
-            throw new KardioException("Search term must be at least 2 characters", HttpStatus.BAD_REQUEST);
+        // Validate search term
+        if (StringUtils.isEmpty(term) || term.length() < 2) {
+            throw KardioException.validationError(messageSource, "error.validation.searchterm", 2);
         }
 
-        Page<StudyModule> modulePage;
+        // Get appropriate page of modules based on search criteria
+        Page<StudyModule> modulePage = getSearchModulesPage(term, publicOnly, userId, pageable);
 
+        return createSummaryPageResponse(modulePage, pageable);
+    }
+
+    private Page<StudyModule> getSearchModulesPage(String term, boolean publicOnly, UUID userId, Pageable pageable) {
         if (publicOnly) {
             // Search only public modules
-            modulePage = studyModuleRepository.searchPublicByNameOrDescription(term, VisibilityType.PUBLIC, pageable);
+            return studyModuleRepository.searchPublicByNameOrDescription(term, VisibilityType.PUBLIC, pageable);
         } else if (userId != null) {
-            // Search modules accessible to user
-            // This would be a more complex query that includes:
-            // - Modules created by the user
-            // - Public modules
-            // - Modules shared with the user
-            // Search modules accessible to user
+            // Filter accessible modules after search
             Page<StudyModule> allModulesPage = studyModuleRepository.searchByNameOrDescription(term, pageable);
-
-            // Lọc kết quả theo quyền truy cập
             List<StudyModule> accessibleModules = allModulesPage
                 .getContent()
                 .stream()
                 .filter(module -> canAccessModule(module, userId))
                 .collect(Collectors.toList());
 
-            // Tạo một Page mới từ danh sách đã lọc
-            modulePage = new PageImpl<>(accessibleModules, pageable, accessibleModules.size());
+            return new PageImpl<>(accessibleModules, pageable, accessibleModules.size());
         } else {
             // Search all modules (admin only)
-            modulePage = studyModuleRepository.searchByNameOrDescription(term, pageable);
+            return studyModuleRepository.searchByNameOrDescription(term, pageable);
         }
-
-        return createSummaryPageResponse(modulePage, pageable);
     }
 
     @Override
@@ -335,33 +346,50 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check ownership
         if (!module.getCreator().getId().equals(ownerId)) {
             log.error("User {} is not the owner of module {}", ownerId, id);
-            throw KardioException.forbidden("You must be the owner to share this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.owner",
+                    "share",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
-        // Verify module is sharable
+        // Update module visibility if private
+        updateModuleVisibilityIfNeeded(module);
+
+        // Share with each user
+        int successCount = shareModuleWithUsers(module, request.getUserIds(), ownerId);
+
+        log.info("Module shared successfully with {} users", successCount);
+        return SuccessResponse.of(messageSource.getMessage("success.shared", new Object[]{
+                messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()), successCount
+        }, LocaleContextHolder.getLocale()));
+    }
+
+    private void updateModuleVisibilityIfNeeded(StudyModule module) {
         if (module.getVisibility() == VisibilityType.PRIVATE) {
-            // Update visibility to SHARED
             module.setVisibility(VisibilityType.SHARED);
             studyModuleRepository.save(module);
         }
+    }
 
+    private int shareModuleWithUsers(StudyModule module, UUID[] userIds, UUID ownerId) {
         int successCount = 0;
 
-        // Share with each user
-        for (UUID userId : request.getUserIds()) {
-            try {
-                // Skip if sharing with self
-                if (userId.equals(ownerId)) {
-                    continue;
-                }
+        for (UUID userId : userIds) {
+            // Skip if sharing with self
+            if (userId.equals(ownerId)) {
+                continue;
+            }
 
+            try {
                 // Check if user exists
                 User user = userRepository
                     .findById(userId)
-                    .orElseThrow(() -> KardioException.resourceNotFound("User", userId));
+                    .orElseThrow(() -> KardioException.resourceNotFound(messageSource, "entity.user", userId));
 
                 // Check if already shared
-                if (!sharedStudyModuleRepository.existsByStudyModuleIdAndUserId(id, userId)) {
+                if (!sharedStudyModuleRepository.existsByStudyModuleIdAndUserId(module.getId(), userId)) {
                     // Create sharing record
                     SharedStudyModule sharedModule = SharedStudyModule.builder().studyModule(module).user(user).build();
 
@@ -369,13 +397,12 @@ public class StudyModuleServiceImpl implements StudyModuleService {
                     successCount++;
                 }
             } catch (Exception e) {
-                log.error("Failed to share module {} with user {}: {}", id, userId, e.getMessage());
+                log.error("Failed to share module {} with user {}: {}", module.getId(), userId, e.getMessage());
                 // Continue with next user
             }
         }
 
-        log.info("Module shared successfully with {} users", successCount);
-        return SuccessResponse.of("Module shared successfully with " + successCount + " users");
+        return successCount;
     }
 
     @Override
@@ -388,91 +415,172 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         // Check ownership
         if (!module.getCreator().getId().equals(ownerId)) {
             log.error("User {} is not the owner of module {}", ownerId, id);
-            throw KardioException.forbidden("You must be the owner to unshare this module");
+            throw KardioException
+                .forbidden(
+                    messageSource,
+                    "error.forbidden.owner",
+                    "unshare",
+                    messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale()));
         }
 
         // Delete sharing record
         sharedStudyModuleRepository.deleteByStudyModuleIdAndUserId(id, userId);
 
-        // If no more shares, update visibility back to PRIVATE if currently SHARED
+        // Update visibility if needed
+        updateModuleVisibilityAfterUnshare(module);
+
+        log.info("Module unshared successfully from user {}", userId);
+        return SuccessResponse.of(messageSource.getMessage("success.unshared", new Object[]{
+                messageSource.getMessage("entity.studyModule", null, LocaleContextHolder.getLocale())
+        }, LocaleContextHolder.getLocale()));
+    }
+
+    private void updateModuleVisibilityAfterUnshare(StudyModule module) {
         if (module.getVisibility() == VisibilityType.SHARED) {
-            long shareCount = sharedStudyModuleRepository.countByStudyModuleId(id);
+            long shareCount = sharedStudyModuleRepository.countByStudyModuleId(module.getId());
 
             if (shareCount == 0) {
                 module.setVisibility(VisibilityType.PRIVATE);
                 studyModuleRepository.save(module);
             }
         }
-
-        log.info("Module unshared successfully from user {}", userId);
-        return SuccessResponse.of("Module unshared successfully");
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "recentModules", key = "#userId + '-' + #limit")
     public List<StudyModuleSummaryResponse> getRecentModules(UUID userId, int limit) {
         log.debug("Getting {} recent modules for user ID: {}", limit, userId);
 
         // Validate user exists
         if (!userRepository.existsById(userId)) {
             log.error("User not found with ID: {}", userId);
-            throw KardioException.resourceNotFound("User", userId);
+            throw KardioException.resourceNotFound(messageSource, "entity.user", userId);
         }
 
         Pageable limitedRequest = PageRequest.of(0, limit);
         List<StudyModule> modules = studyModuleRepository.findRecentModules(userId, limitedRequest);
 
-        return modules.stream().map(module -> {
-            int vocabularyCount = (int) vocabularyRepository.countByModuleId(module.getId());
-            return studyModuleMapper.toSummaryResponse(module, vocabularyCount);
-        }).collect(Collectors.toList());
+        // Get vocabulary counts efficiently
+        List<UUID> moduleIds = modules.stream().map(StudyModule::getId).collect(Collectors.toList());
+
+        Map<UUID, Integer> vocabularyCounts = getVocabularyCounts(moduleIds);
+
+        return modules
+            .stream()
+            .map(
+                module -> studyModuleMapper.toSummaryResponse(module, vocabularyCounts.getOrDefault(module.getId(), 0)))
+            .collect(Collectors.toList());
     }
 
     /**
-     * Helper method to create summary page response from page object.
+     * Calculate statistics for a module
      */
-    private
-            PageResponse<StudyModuleSummaryResponse>
-            createSummaryPageResponse(Page<StudyModule> modulePage, Pageable pageable) {
+    private ModuleStatistics calculateModuleStatistics(UUID moduleId, UUID userId) {
+        // Get vocabulary count
+        int vocabularyCount = (int) vocabularyRepository.countByModuleId(moduleId);
 
-        // Get vocabulary counts for these modules
+        double averageAccuracy = 0.0;
+        double completionPercentage = 0.0;
+
+        if (userId != null && vocabularyCount > 0) {
+            // Get statistics in a single efficient query
+            Map<String, Object> stats = learningProgressRepository.getModuleStatistics(moduleId, userId);
+
+            long masteredCount = ((Number) stats.getOrDefault("masteredCount", 0L)).longValue();
+            averageAccuracy = ((Number) stats.getOrDefault("averageAccuracy", 0.0)).doubleValue();
+
+            // Calculate completion percentage
+            completionPercentage = (double) masteredCount / vocabularyCount * 100;
+        }
+
+        return new ModuleStatistics(vocabularyCount, averageAccuracy, completionPercentage);
+    }
+
+    /**
+     * Create summary page response from page of modules and vocabulary counts
+     */
+    private PageResponse<StudyModuleSummaryResponse> createSummaryPageResponse(
+            Page<StudyModule> modulePage,
+            Pageable pageable) {
+
+        if (modulePage.isEmpty()) {
+            return emptyPageResponse(pageable);
+        }
+
+        // Get module IDs efficiently
         List<UUID> moduleIds = modulePage.getContent().stream().map(StudyModule::getId).collect(Collectors.toList());
 
-        // This would ideally be a single query to get counts for all modules at once
-        Map<UUID, Integer> vocabularyCounts = moduleIds
-            .stream()
-            .collect(Collectors.toMap(id -> id, id -> (int) vocabularyRepository.countByModuleId(id)));
+        // Get vocabulary counts in a single batch query
+        Map<UUID, Integer> vocabularyCounts = getVocabularyCounts(moduleIds);
 
-        // Map to summary responses
-        Page<StudyModuleSummaryResponse> dtoPage = modulePage.map(module -> {
-            Integer count = vocabularyCounts.getOrDefault(module.getId(), 0);
-            return studyModuleMapper.toSummaryResponse(module, count);
-        });
+        // Map to summary responses with counts
+        List<StudyModuleSummaryResponse> dtoList = modulePage
+            .getContent()
+            .stream()
+            .map(
+                module -> studyModuleMapper.toSummaryResponse(module, vocabularyCounts.getOrDefault(module.getId(), 0)))
+            .collect(Collectors.toList());
 
         return PageResponse
             .<StudyModuleSummaryResponse>builder()
-            .content(dtoPage.getContent())
+            .content(dtoList)
             .page(pageable.getPageNumber())
             .size(pageable.getPageSize())
-            .totalElements(dtoPage.getTotalElements())
-            .totalPages(dtoPage.getTotalPages())
-            .first(dtoPage.isFirst())
-            .last(dtoPage.isLast())
+            .totalElements(modulePage.getTotalElements())
+            .totalPages(modulePage.getTotalPages())
+            .first(modulePage.isFirst())
+            .last(modulePage.isLast())
             .build();
     }
 
     /**
-     * Helper method to find module by ID or throw exception.
+     * Get vocabulary counts for multiple modules in a single query
+     */
+    private Map<UUID, Integer> getVocabularyCounts(List<UUID> moduleIds) {
+        if (moduleIds.isEmpty()) {
+            return Map.of();
+        }
+
+        // Efficient batch query to get counts for all modules at once
+        List<Object[]> countsData = vocabularyRepository.countVocabulariesForModules(moduleIds);
+
+        return countsData
+            .stream()
+            .collect(
+                Collectors
+                    .toMap(
+                        row -> (UUID) row[0],  // moduleId
+                        row -> ((Number) row[1]).intValue(),  // count
+                        (a, b) -> a  // In case of duplicates, keep first
+                    ));
+    }
+
+    private <T> PageResponse<T> emptyPageResponse(Pageable pageable) {
+        return PageResponse
+            .<T>builder()
+            .content(List.of())
+            .page(pageable.getPageNumber())
+            .size(pageable.getPageSize())
+            .totalElements(0L)
+            .totalPages(0)
+            .first(true)
+            .last(true)
+            .build();
+    }
+
+    /**
+     * Find module by ID or throw exception
      */
     private StudyModule findModuleById(UUID id) {
         return studyModuleRepository.findById(id).orElseThrow(() -> {
             log.error("Study module not found with ID: {}", id);
-            return KardioException.resourceNotFound("StudyModule", id);
+            return KardioException.resourceNotFound(messageSource, "entity.studyModule", id);
         });
     }
 
     /**
-     * Checks if a user can access a module.
+     * Check if a user can access a module
      */
     private boolean canAccessModule(StudyModule module, UUID userId) {
         // Admin access or public module
@@ -491,5 +599,32 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         }
 
         return false;
+    }
+
+    /**
+     * Private class to hold module statistics
+     */
+    private static class ModuleStatistics {
+        private final int vocabularyCount;
+        private final double averageAccuracy;
+        private final double completionPercentage;
+
+        public ModuleStatistics(int vocabularyCount, double averageAccuracy, double completionPercentage) {
+            this.vocabularyCount = vocabularyCount;
+            this.averageAccuracy = averageAccuracy;
+            this.completionPercentage = completionPercentage;
+        }
+
+        public int getVocabularyCount() {
+            return vocabularyCount;
+        }
+
+        public double getAverageAccuracy() {
+            return averageAccuracy;
+        }
+
+        public double getCompletionPercentage() {
+            return completionPercentage;
+        }
     }
 }

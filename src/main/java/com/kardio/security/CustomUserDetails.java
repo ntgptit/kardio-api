@@ -17,7 +17,7 @@ public class CustomUserDetails extends org.springframework.security.core.userdet
 
     private static final long serialVersionUID = 1L;
 
-    private final User user;
+    private transient User user;
 
     /**
      * Constructs a CustomUserDetails from a User entity

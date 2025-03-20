@@ -20,7 +20,7 @@ public abstract class AbstractGenericMapper<E, D> implements GenericMapper<E, D>
      * Constructor that initializes entity and DTO class types using reflection.
      */
     @SuppressWarnings("unchecked")
-    public AbstractGenericMapper() {
+    protected AbstractGenericMapper() {
         ParameterizedType genericSuperclass = (ParameterizedType) getClass().getGenericSuperclass();
         this.entityClass = (Class<E>) genericSuperclass.getActualTypeArguments()[0];
         this.dtoClass = (Class<D>) genericSuperclass.getActualTypeArguments()[1];

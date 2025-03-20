@@ -1,22 +1,19 @@
 package com.kardio.dto.auth;
 
-import com.kardio.dto.user.UserResponse;
-
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for authentication response containing JWT token and user information
+ * DTO for refresh token request
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AuthResponse {
-
-    private String token;
+public class RefreshTokenRequest {
+    @NotBlank(message = "Refresh token is required")
     private String refreshToken;
-    private UserResponse user;
 }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.kardio.dto.auth.AuthRequest;
 import com.kardio.dto.auth.AuthResponse;
+import com.kardio.dto.auth.RefreshTokenRequest;
 import com.kardio.dto.auth.RegisterRequest;
 import com.kardio.dto.common.SuccessResponse;
 import com.kardio.dto.user.UserResponse;
@@ -78,6 +79,25 @@ public class AuthController {
     }
 
     /**
+     * Refreshes an authentication token.
+     *
+     * @param request The refresh token request
+     * @return The new authentication response with token
+     */
+    @PostMapping("/refresh-token")
+    @Operation(summary = "Refresh an authentication token using a refresh token")
+    @ApiResponse(responseCode = "200", description = "Token refreshed successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid refresh token")
+    @ApiResponse(responseCode = "401", description = "Refresh token is expired or invalid")
+    public ResponseEntity<AuthResponse> refreshToken(
+            @Valid
+            @RequestBody RefreshTokenRequest request) {
+        Objects.requireNonNull(request, "Refresh token request cannot be null");
+        final AuthResponse response = authService.refreshToken(request.getRefreshToken());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Validates a JWT token.
      *
      * @param token The JWT token to validate
@@ -109,24 +129,25 @@ public class AuthController {
     @ApiResponse(responseCode = "401", description = "Not authenticated")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity
-            .ok(UserResponse
-                .builder()
-                .id(userDetails.getUser().getId())
-                .email(userDetails.getUsername())
-                .firstName(userDetails.getUser().getFirstName())
-                .lastName(userDetails.getUser().getLastName())
-                .displayName(userDetails.getUser().getDisplayName())
-                .roles(userDetails
-                    .getAuthorities()
-                    .stream()
-                    .map(auth -> auth.getAuthority().replace("ROLE_", ""))
-                    .toList())
-                .build());
+            .ok(
+                UserResponse
+                    .builder()
+                    .id(userDetails.getUser().getId())
+                    .email(userDetails.getUsername())
+                    .firstName(userDetails.getUser().getFirstName())
+                    .lastName(userDetails.getUser().getLastName())
+                    .displayName(userDetails.getUser().getDisplayName())
+                    .roles(
+                        userDetails
+                            .getAuthorities()
+                            .stream()
+                            .map(auth -> auth.getAuthority().replace("ROLE_", ""))
+                            .toList())
+                    .build());
     }
 
     /**
      * Logs out the current user by invalidating their token.
-     * Note: Actual token invalidation depends on the implementation strategy.
      *
      * @return Success response
      */
@@ -135,7 +156,6 @@ public class AuthController {
     @ApiResponse(responseCode = "200", description = "Logout successful")
     @ApiResponse(responseCode = "401", description = "Not authenticated")
     public ResponseEntity<SuccessResponse> logout() {
-        // Implement token blacklisting/invalidation if needed
         return ResponseEntity.ok(SuccessResponse.of("Logged out successfully"));
     }
 }
