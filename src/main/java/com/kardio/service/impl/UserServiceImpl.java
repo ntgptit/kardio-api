@@ -17,6 +17,7 @@ import com.kardio.exception.KardioException;
 import com.kardio.mapper.UserMapper;
 import com.kardio.repository.UserRepository;
 import com.kardio.service.UserService;
+import com.kardio.util.PageUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,16 +50,7 @@ public class UserServiceImpl implements UserService {
         Page<User> userPage = userRepository.findAll(pageable);
         Page<UserResponse> dtoPage = userMapper.toDtoPage(userPage);
 
-        return PageResponse
-            .<UserResponse>builder()
-            .content(dtoPage.getContent())
-            .page(pageable.getPageNumber())
-            .size(pageable.getPageSize())
-            .totalElements(dtoPage.getTotalElements())
-            .totalPages(dtoPage.getTotalPages())
-            .first(dtoPage.isFirst())
-            .last(dtoPage.isLast())
-            .build();
+        return PageUtils.createPageResponse(dtoPage, pageable);
     }
 
     /**

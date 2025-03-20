@@ -33,6 +33,7 @@ import com.kardio.repository.StudyModuleRepository;
 import com.kardio.repository.UserRepository;
 import com.kardio.repository.VocabularyRepository;
 import com.kardio.service.VocabularyService;
+import com.kardio.util.PageUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -142,15 +143,15 @@ public class VocabularyServiceImpl implements VocabularyService {
 
         // Validate module exists
         if (!studyModuleRepository.existsById(moduleId)) {
-            log.error(LOG_MODULE_NOT_FOUND, moduleId);
-            throw KardioException.resourceNotFound(messageSource, KEY_ENTITY_MODULE, moduleId);
+            log.error("Study module not found with ID: {}", moduleId);
+            throw KardioException.resourceNotFound(messageSource, "entity.studyModule", moduleId);
         }
 
         // Get vocabularies with pagination
         final Page<Vocabulary> vocabularyPage = vocabularyRepository.findByModuleId(moduleId, pageable);
         final Page<VocabularyResponse> dtoPage = vocabularyPage.map(vocabularyMapper::toDto);
 
-        return createPageResponse(dtoPage, pageable);
+        return PageUtils.createPageResponse(dtoPage, pageable);
     }
 
     @Override

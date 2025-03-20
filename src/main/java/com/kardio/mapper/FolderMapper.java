@@ -4,7 +4,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
@@ -178,9 +177,10 @@ public class FolderMapper extends AbstractGenericMapper<Folder, FolderResponse> 
      * @param moduleCount Count of modules in this folder
      * @return A folder hierarchy response
      */
-    public
-            FolderHierarchyResponse
-            toHierarchyResponse(Folder folder, List<FolderHierarchyResponse> children, Integer moduleCount) {
+    public FolderHierarchyResponse toHierarchyResponse(
+            Folder folder,
+            List<FolderHierarchyResponse> children,
+            Integer moduleCount) {
 
         if (folder == null) {
             return null;
@@ -209,9 +209,10 @@ public class FolderMapper extends AbstractGenericMapper<Folder, FolderResponse> 
      * @param moduleCountMap Map of folder IDs to module counts
      * @return List of folder hierarchy responses
      */
-    public
-            List<FolderHierarchyResponse>
-            buildFolderHierarchy(List<Folder> allFolders, UUID parentId, Map<UUID, Integer> moduleCountMap) {
+    public List<FolderHierarchyResponse> buildFolderHierarchy(
+            List<Folder> allFolders,
+            UUID parentId,
+            Map<UUID, Integer> moduleCountMap) {
 
         if (allFolders == null || allFolders.isEmpty()) {
             return Collections.emptyList();
@@ -227,6 +228,6 @@ public class FolderMapper extends AbstractGenericMapper<Folder, FolderResponse> 
             Integer moduleCount = moduleCountMap.getOrDefault(folder.getId(), 0);
             List<FolderHierarchyResponse> children = buildFolderHierarchy(allFolders, folder.getId(), moduleCountMap);
             return toHierarchyResponse(folder, children, moduleCount);
-        }).collect(Collectors.toList());
+        }).toList();
     }
 }

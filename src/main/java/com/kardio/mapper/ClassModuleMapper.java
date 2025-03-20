@@ -45,10 +45,7 @@ public class ClassModuleMapper extends AbstractGenericMapper<ClassModule, ClassM
 
         // Note: This is a simplified implementation
         // Class, Module, and AddedBy would need to be set separately
-        ClassModule classModule = new ClassModule();
-        // No properties to set directly from DTO
-
-        return classModule;
+        return new ClassModule();
     }
 
     @Override

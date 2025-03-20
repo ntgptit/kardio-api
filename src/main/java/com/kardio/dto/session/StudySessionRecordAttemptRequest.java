@@ -17,14 +17,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class StudySessionRecordAttemptRequest {
-	@NotNull(message = "Session ID is required")
-	private UUID sessionId;
+    @NotNull(message = "Session ID is required")
+    private UUID sessionId;
 
-	@NotNull(message = "Vocabulary ID is required")
-	private UUID vocabularyId;
+    @NotNull(message = "Vocabulary ID is required")
+    private UUID vocabularyId;
 
-	private Boolean isCorrect;
+    private Boolean isCorrect;
 
-	@Min(value = 0, message = "Response time cannot be negative")
-	private Integer responseTimeMs;
+    @Min(value = 0, message = "Response time cannot be negative")
+    private Integer responseTimeMs;
 }

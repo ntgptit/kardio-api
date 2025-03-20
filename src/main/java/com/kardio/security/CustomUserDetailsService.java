@@ -2,7 +2,6 @@ package com.kardio.security;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -73,7 +72,7 @@ public class CustomUserDetailsService implements UserDetailsService {
             .getRoles()
             .stream()
             .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-            .collect(Collectors.toList());
+            .toList();
 
         // Create CustomUserDetails with simplified constructor
         return new CustomUserDetails(user, authorities);

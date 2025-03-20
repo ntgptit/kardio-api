@@ -1,7 +1,5 @@
 package com.kardio.mapper;
 
-import java.util.stream.Collectors;
-
 import org.springframework.stereotype.Component;
 
 import com.kardio.dto.user.UserDetailedResponse;
@@ -37,7 +35,7 @@ public class UserMapper extends AbstractGenericMapper<User, UserResponse> {
             .lastName(entity.getLastName())
             .displayName(entity.getDisplayName())
             .createdAt(entity.getCreatedAt())
-            .roles(entity.getRoles().stream().map(Role::getName).collect(Collectors.toList()))
+            .roles(entity.getRoles().stream().map(Role::getName).toList())
             .build();
     }
 

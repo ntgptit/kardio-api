@@ -3,6 +3,7 @@ package com.kardio.service.impl;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +41,7 @@ import com.kardio.repository.StudyModuleRepository;
 import com.kardio.repository.UserRepository;
 import com.kardio.repository.VocabularyRepository;
 import com.kardio.service.StudyModuleService;
+import com.kardio.util.PageUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -277,6 +279,10 @@ public class StudyModuleServiceImpl implements StudyModuleService {
 
         Page<StudyModule> modulePage = studyModuleRepository.findByVisibility(VisibilityType.PUBLIC, pageable);
 
+        if (modulePage.isEmpty()) {
+            return PageUtils.emptyPageResponse(pageable);
+        }
+
         return createSummaryPageResponse(modulePage, pageable);
     }
 
@@ -327,7 +333,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
                 .getContent()
                 .stream()
                 .filter(module -> canAccessModule(module, userId))
-                .collect(Collectors.toList());
+                .toList();
 
             return new PageImpl<>(accessibleModules, pageable, accessibleModules.size());
         } else {
@@ -462,7 +468,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
         List<StudyModule> modules = studyModuleRepository.findRecentModules(userId, limitedRequest);
 
         // Get vocabulary counts efficiently
-        List<UUID> moduleIds = modules.stream().map(StudyModule::getId).collect(Collectors.toList());
+        List<UUID> moduleIds = modules.stream().map(StudyModule::getId).toList();
 
         Map<UUID, Integer> vocabularyCounts = getVocabularyCounts(moduleIds);
 
@@ -470,7 +476,7 @@ public class StudyModuleServiceImpl implements StudyModuleService {
             .stream()
             .map(
                 module -> studyModuleMapper.toSummaryResponse(module, vocabularyCounts.getOrDefault(module.getId(), 0)))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     /**
@@ -505,33 +511,20 @@ public class StudyModuleServiceImpl implements StudyModuleService {
             Pageable pageable) {
 
         if (modulePage.isEmpty()) {
-            return emptyPageResponse(pageable);
+            return PageUtils.emptyPageResponse(pageable);
         }
 
         // Get module IDs efficiently
-        List<UUID> moduleIds = modulePage.getContent().stream().map(StudyModule::getId).collect(Collectors.toList());
+        List<UUID> moduleIds = modulePage.getContent().stream().map(StudyModule::getId).toList();
 
         // Get vocabulary counts in a single batch query
         Map<UUID, Integer> vocabularyCounts = getVocabularyCounts(moduleIds);
 
-        // Map to summary responses with counts
-        List<StudyModuleSummaryResponse> dtoList = modulePage
-            .getContent()
-            .stream()
-            .map(
-                module -> studyModuleMapper.toSummaryResponse(module, vocabularyCounts.getOrDefault(module.getId(), 0)))
-            .collect(Collectors.toList());
+        // Define mapper function
+        Function<StudyModule, StudyModuleSummaryResponse> mapper = module -> studyModuleMapper
+            .toSummaryResponse(module, vocabularyCounts.getOrDefault(module.getId(), 0));
 
-        return PageResponse
-            .<StudyModuleSummaryResponse>builder()
-            .content(dtoList)
-            .page(pageable.getPageNumber())
-            .size(pageable.getPageSize())
-            .totalElements(modulePage.getTotalElements())
-            .totalPages(modulePage.getTotalPages())
-            .first(modulePage.isFirst())
-            .last(modulePage.isLast())
-            .build();
+        return PageUtils.createPageResponse(modulePage, mapper);
     }
 
     /**
@@ -554,19 +547,6 @@ public class StudyModuleServiceImpl implements StudyModuleService {
                         row -> ((Number) row[1]).intValue(),  // count
                         (a, b) -> a  // In case of duplicates, keep first
                     ));
-    }
-
-    private <T> PageResponse<T> emptyPageResponse(Pageable pageable) {
-        return PageResponse
-            .<T>builder()
-            .content(List.of())
-            .page(pageable.getPageNumber())
-            .size(pageable.getPageSize())
-            .totalElements(0L)
-            .totalPages(0)
-            .first(true)
-            .last(true)
-            .build();
     }
 
     /**

@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +28,7 @@ import com.kardio.repository.FolderRepository;
 import com.kardio.repository.StudyModuleRepository;
 import com.kardio.repository.UserRepository;
 import com.kardio.service.FolderService;
+import com.kardio.util.PageUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -114,7 +114,7 @@ public class FolderServiceImpl implements FolderService {
                 int vocabularyCount = (int) studyModuleRepository.countByFolderId(id);
                 return studyModuleMapper.toSummaryResponse(module, vocabularyCount);
             })
-            .collect(Collectors.toList());
+            .toList();
 
         return folderMapper.toDetailedResponse(folder, subfolderResponses, modules);
     }
@@ -207,7 +207,7 @@ public class FolderServiceImpl implements FolderService {
         Page<Folder> folderPage = folderRepository.findByUserIdAndParentFolderIsNull(userId, pageable);
         Page<FolderResponse> dtoPage = folderPage.map(folderMapper::toDto);
 
-        return createPageResponse(dtoPage, pageable);
+        return PageUtils.createPageResponse(dtoPage, pageable);
     }
 
     @Override

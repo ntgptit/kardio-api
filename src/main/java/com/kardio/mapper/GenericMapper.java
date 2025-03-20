@@ -2,7 +2,6 @@ package com.kardio.mapper;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -43,7 +42,7 @@ public interface GenericMapper<E, D> {
         if (entities == null) {
             return List.of();
         }
-        return entities.stream().map(this::toDto).collect(Collectors.toList());
+        return entities.stream().map(this::toDto).toList();
     }
 
     /**
@@ -56,7 +55,7 @@ public interface GenericMapper<E, D> {
         if (dtos == null) {
             return List.of();
         }
-        return dtos.stream().map(this::toEntity).collect(Collectors.toList());
+        return dtos.stream().map(this::toEntity).toList();
     }
 
     /**

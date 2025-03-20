@@ -1,5 +1,7 @@
 package com.kardio.service.impl;
 
+import java.util.Objects;
+
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
@@ -19,6 +21,7 @@ import com.kardio.dto.auth.RegisterRequest;
 import com.kardio.dto.user.UserResponse;
 import com.kardio.entity.Role;
 import com.kardio.entity.User;
+import com.kardio.entity.enums.RoleType;
 import com.kardio.exception.KardioException;
 import com.kardio.mapper.UserMapper;
 import com.kardio.repository.RoleRepository;
@@ -45,42 +48,39 @@ public class AuthServiceImpl implements AuthService {
     private final UserMapper userMapper;
     private final MessageSource messageSource;
 
+    /**
+     * Registers a new user.
+     *
+     * @param request User registration details, must not be null
+     * @return The registered user response
+     * @throws KardioException if email already exists or role not found
+     */
     @Transactional
     @Override
     public UserResponse register(RegisterRequest request) {
+        // Validate input
+        Objects.requireNonNull(request, "Registration request cannot be null");
+        Objects.requireNonNull(request.getEmail(), "Email cannot be null");
+        Objects.requireNonNull(request.getPassword(), "Password cannot be null");
+        Objects.requireNonNull(request.getFirstName(), "First name cannot be null");
+        Objects.requireNonNull(request.getLastName(), "Last name cannot be null");
+
         log.info("Registering new user with email: {}", request.getEmail());
 
+        // Check if email already exists (Guard Clause)
         if (userRepository.existsByEmail(request.getEmail())) {
             log.warn("Email already in use: {}", request.getEmail());
             throw KardioException.resourceAlreadyExists(messageSource, "entity.user", "email", request.getEmail());
         }
 
-        Role userRole = roleRepository.findByName(Role.RoleName.USER).orElseThrow(() -> {
-            log.error("Default user role not found");
-            return new KardioException(
-                messageSource
-                    .getMessage(
-                        "error.role.notfound",
-                        null,
-                        "Default user role not found",
-                        LocaleContextHolder.getLocale()),
-                HttpStatus.INTERNAL_SERVER_ERROR);
-        });
+        // Get default user role
+        final Role userRole = findDefaultUserRole();
 
-        User user = User
-            .builder()
-            .email(request.getEmail())
-            .password(passwordEncoder.encode(request.getPassword()))
-            .firstName(request.getFirstName())
-            .lastName(request.getLastName())
-            .active(true)
-            .build();
+        // Create and save new user
+        final User user = createUserFromRequest(request, userRole);
+        final User savedUser = userRepository.save(user);
 
-        user.addRole(userRole);
-
-        User savedUser = userRepository.save(user);
         log.info("User registered successfully: {}", savedUser.getEmail());
-
         return userMapper.toDto(savedUser);
     }
 
@@ -202,5 +202,46 @@ public class AuthServiceImpl implements AuthService {
                         LocaleContextHolder.getLocale()),
                 HttpStatus.UNAUTHORIZED);
         }
+    }
+
+    /**
+     * Finds the default USER role.
+     *
+     * @return The USER role
+     * @throws KardioException if role not found
+     */
+    private Role findDefaultUserRole() {
+        return roleRepository.findByName(RoleType.USER.getValue()).orElseThrow(() -> {
+            log.error("Default user role not found");
+            return new KardioException(
+                messageSource
+                    .getMessage(
+                        "error.role.notfound",
+                        null,
+                        "Default user role not found",
+                        LocaleContextHolder.getLocale()),
+                HttpStatus.INTERNAL_SERVER_ERROR);
+        });
+    }
+
+    /**
+     * Creates a User entity from the registration request.
+     *
+     * @param request  Registration request
+     * @param userRole Default user role
+     * @return User entity
+     */
+    private User createUserFromRequest(RegisterRequest request, Role userRole) {
+        final User user = User
+            .builder()
+            .email(request.getEmail())
+            .password(passwordEncoder.encode(request.getPassword()))
+            .firstName(request.getFirstName())
+            .lastName(request.getLastName())
+            .active(true)
+            .build();
+
+        user.addRole(userRole);
+        return user;
     }
 }

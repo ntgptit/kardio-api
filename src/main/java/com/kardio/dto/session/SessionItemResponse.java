@@ -16,12 +16,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SessionItemResponse {
-	private UUID id;
-	private UUID vocabularyId;
-	private String term;
-	private String definition;
-	private Boolean isCorrect;
-	private Integer responseTimeMs;
-	private Double responseTimeSeconds;
-	private LocalDateTime createdAt;
+    private UUID id;
+    private UUID vocabularyId;
+    private String term;
+    private String definition;
+    private Boolean isCorrect;
+    private Integer responseTimeMs;
+    private Double responseTimeSeconds;
+    private LocalDateTime createdAt;
 }

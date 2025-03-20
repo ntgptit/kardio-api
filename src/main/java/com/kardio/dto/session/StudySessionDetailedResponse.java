@@ -20,16 +20,16 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class StudySessionDetailedResponse {
-	private UUID id;
-	private UUID moduleId;
-	private String moduleName;
-	private SessionType sessionType;
-	private LocalDateTime startTime;
-	private LocalDateTime endTime;
-	private Integer totalItems;
-	private Integer correctItems;
-	private Double accuracyRate;
-	private Long durationSeconds;
-	private List<SessionItemResponse> items;
-	private StudyModuleResponse module;
+    private UUID id;
+    private UUID moduleId;
+    private String moduleName;
+    private SessionType sessionType;
+    private LocalDateTime startTime;
+    private LocalDateTime endTime;
+    private Integer totalItems;
+    private Integer correctItems;
+    private Double accuracyRate;
+    private Long durationSeconds;
+    private List<SessionItemResponse> items;
+    private StudyModuleResponse module;
 }

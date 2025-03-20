@@ -15,10 +15,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SessionItemAnalysisResponse {
-	private Integer totalItems;
-	private Integer correctItems;
-	private Double accuracyRate;
-	private Double averageResponseTimeMs;
-	private List<String> difficultTerms;
-	private List<String> masteredTerms;
+    private Integer totalItems;
+    private Integer correctItems;
+    private Double accuracyRate;
+    private Double averageResponseTimeMs;
+    private List<String> difficultTerms;
+    private List<String> masteredTerms;
 }
